@@ -1,0 +1,1982 @@
+using CTSBLRResearch.Utilities.Logging;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
+using System.Xml.Serialization;
+
+ 
+
+namespace CNCDC_DataMerger
+{
+    class MergeData
+    {
+        protected static Logger __PLogger = new Logger("Log");
+        DAL dal = new DAL();
+        static string dayRegex = "([0]{0,1}[1-9]|[1-2][0-9]|[3][0-1])";
+        static string monthRegex = "([0]{0,1}[1-9]|[1][0-2])";
+        static string monthInwordRegex = "JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC";
+        static string yearRegex = "([0-9]{2})";
+        static string yearFourRegex = "([1-9][0-9]{3})";
+        //string MyyearRegex = "([1-9][0-9][0-9]{0,2})[ ]*";
+        static string yearTwoRegex = "([0-9]{2})";
+        static string dmyRegex1 = "\\b(" + dayRegex + "[ ]*" + "(ST|ND|TH|RD)" + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + yearRegex + ")\\b";
+        static string dmyRegex = "\\b(" + dayRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + yearRegex + ")\\b";
+        static string dmyyRegex = "\\b(" + dayRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + yearFourRegex + ")\\b";
+        static string dmyyRegex1 = "\\b(" + dayRegex + "[ ]*" + "(ST|ND|TH|RD)" + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + yearFourRegex + ")\\b";
+        static string mdyRegex = "\\b(" + monthRegex + "|" + monthInwordRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + dayRegex + ")" + "[ ]*" + "[\\.\\-\\/ ,]*" + "\\b(" + yearRegex + ")\\b";
+        static string mdyRegex1 = "\\b(" + monthRegex + "|" + monthInwordRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + dayRegex + ")" + "[ ]*" + "(ST|ND|TH|RD)" + "[\\.\\-\\/ ,]*" + "\\b(" + yearRegex + ")\\b";
+        static string ymdRegex = "\\b(" + yearFourRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + dayRegex + ")" + "[ ]*" + "(ND|TH|RD)" + "\\b";
+        //string yymmddRegex = "\\b(" + MyyearRegex + ")\\b" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + dayRegex + ")" + "[ ]*\\b";
+        static string ymdRegex2 = "\\b(" + yearFourRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + dayRegex + ")" + "[ ]*\\b";
+        static string mdyyRegex = "\\b(" + monthRegex + "|" + monthInwordRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + dayRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + yearFourRegex + ")\\b";
+        //string mdyyRegex1 = "\\b(" + monthRegex + "|" + monthInwordRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + dayRegex + "[ ]*" + "(ST|ND|TH|RD)" + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + yearFourRegex + ")\\b";
+        static string yymdRegex = "\\b(" + yearTwoRegex + ")\\b" + "[\\.\\-\\/ ,]*" + "(" + monthRegex + "|" + monthInwordRegex + ")" + "[\\.\\-\\/ ,]*" + "\\b(" + dayRegex + ")\\b";
+        static string genericRegex = dmyRegex + "|" + dmyRegex1 + "|" + dmyyRegex + "|" + dmyyRegex1 + "|" + mdyRegex + "|" + mdyRegex1 + "|" + ymdRegex + "|" + ymdRegex2 + "|" + mdyyRegex + "|" + yymdRegex;
+        static List<string> substringList = new List<string>
+        {
+            " MD", " DC", " DO", "DDS", " PAC", " NP", " PA", " DPM", " DMD", " ARN", " FNP", " CNP", " RPA", " CFNP", " NPC", " OD", " APNP", " MDDO", " GNP", " ARNP", " ANP", " APRN", " CNM", " CRNP"
+        };
+        static List<string> gaurdian_list = new List<string>
+        {
+        "FATHER","MOM","HUSBAND","MOTHER","WIFE","SON","PARENT-MOM","BROTHER","SISTER","DAUGHTER","UNCLE","PARENT","DAD","SPOUSE","MAM","FRIEND"
+        };
+        static List<string> nosign_list = new List<string>
+        {
+        "UNABLE TO SIGN"
+        };
+        static List<string> docusign_list = new List<string>
+        {
+         "Docu sign"
+        };
+        static List<DataRow> newMLRows = new List<DataRow>();
+        public MergeData()
+        {
+
+ 
+
+        }
+
+ 
+
+        public void AutoProcess()
+        {
+            try
+            {
+                __PLogger.Log.Info("DataMerger AutoProcess starts.");
+                AutoMergeData();
+                __PLogger.Log.Info("DataMerger AutoProcess ends.");
+            }
+            catch (Exception ex)
+            {
+
+ 
+
+                __PLogger.Log.Error("AutoProcess Exception occured.\n =>" + ex.Message);
+                __PLogger.Log.Error(ex.StackTrace);
+            }
+        }
+        private void AutoMergeData()
+        {
+            __PLogger.Log.Info("AutoMergeData starts.");
+
+ 
+
+            try
+            {
+                //Fetch the data from tbl_MLData and tbl_ConfigData - keep as seperate DataTable
+                DataTable MLData = dal.GetPendingMLData();
+                DataTable ConfigData = dal.GetPendingConfigData();
+
+ 
+
+                List<DataRow> newRows = new List<DataRow>();
+                List<DataRow> rowsToRemove = new List<DataRow>();
+                List<string> fieldNameToCheck = new List<string>
+                {
+                    "ProviderFirstName","ProviderLastName","PPADeliveryAddress","PatientName1","PPASign","RXDocNPI","PatientName","Guarantor_CityStateZip","Patient_CityStateZip" ,"PatientLastName1"
+                };
+                if (MLData.Rows.Count > 0 && ConfigData.Rows.Count > 0)
+                {
+                    foreach (DataRow row in ConfigData.Rows)
+                    {
+                        if (row["ConfigFieldName"].ToString() == "PatientName")
+                        {
+                            DataRow newRow1 = ConfigData.NewRow();
+                            newRow1.ItemArray = row.ItemArray.Clone() as object[];
+                            newRow1["ConfigFieldName"] = "PatientName1";
+                            newRows.Add(newRow1); // Add the new row to the list
+                        }
+                        if (row["ConfigFieldName"].ToString() == "PatientLastName")
+                        {
+                            DataRow newRow1 = ConfigData.NewRow();
+                            newRow1.ItemArray = row.ItemArray.Clone() as object[];
+                            newRow1["ConfigFieldName"] = "PatientLastName1";
+                            newRows.Add(newRow1); // Add the new row to the list
+                        }
+                    }
+                    foreach (DataRow newRow in newRows)
+                    {
+                        ConfigData.Rows.Add(newRow);
+                    }
+                    foreach (DataRow row in MLData.Rows)
+                    {
+                        if (row["FieldMappingName"].ToString() == "Patient_City")
+                        {
+                            DataRow newMLRow1 = MLData.NewRow();
+                            DataRow newMLRow2 = MLData.NewRow();
+                            DataRow newMLRow3 = MLData.NewRow();
+                            newMLRow1.ItemArray = row.ItemArray.Clone() as object[];
+                            newMLRow2.ItemArray = row.ItemArray.Clone() as object[];
+                            newMLRow3.ItemArray = row.ItemArray.Clone() as object[];
+                            newMLRow1["FieldMappingName"] = "Patient_City1";
+                            newMLRow2["FieldMappingName"] = "Patient_State1";
+                            newMLRow3["FieldMappingName"] = "Patient_Zip1";
+                            newMLRows.Add(newMLRow1);
+                            newMLRows.Add(newMLRow2);
+                            newMLRows.Add(newMLRow3);
+                        }
+                    }
+                    foreach (DataRow row in MLData.Rows)
+                    {
+                        if (row["FieldMappingName"].ToString() == "Patient_CityStateZip")
+                        {
+                            foreach (DataRow newMLRow in newMLRows)
+                            {
+                                MLData.Rows.Add(newMLRow);
+                            }
+                            break;
+                        }
+                    }
+                    foreach (DataRow row in ConfigData.Rows)
+                    {
+                        string configFieldName = row["ConfigFieldName"].ToString();
+
+ 
+
+                        // Check if the configFieldName matches any of the specified values
+                        if (fieldNameToCheck.Contains(configFieldName))
+                        {
+                            // Add the row to the list of rows to be removed
+                            rowsToRemove.Add(row);
+                        }
+                    }
+                    //Apply Transformation and store data in same DataTable
+                    foreach (DataRow row in MLData.Rows)
+                    {
+                        SplitMLName(MLData, row);
+                        SplitMLCityStateZip(MLData, row);
+
+ 
+
+                    }
+                    foreach (DataRow row in ConfigData.Rows)
+                    {
+                        DateFormat(ConfigData, row, "DOB");
+                        DateFormat(ConfigData, row, "DateOfInjury");
+                        ConcatenatePhysician(ConfigData, row);
+                        ReplaceICD10Code(ConfigData, row);
+                        //MakeCellEmptyIfAllAlphabet(ConfigData, row); ==> Not Available, RefNo
+                        PatientNameTransformation(ConfigData, row);
+                        MakeCellEmptyIfNoAlphabet(ConfigData, row, "PatientFirstName");
+                        MakeCellEmptyIfNoAlphabet(ConfigData, row, "PatientLastName");
+                        MakeCellEmptyIfNoAlphabet(ConfigData, row, "PatientMiddleName");
+                        MakeCellEmptyIfNoAlphabet(ConfigData, row, "BillingAddress");
+                        SplitConfigName(ConfigData, row);
+                        //Prescription1 ==> Nowhere
+                        DocTitlePresent(ConfigData, row);
+                        //RelationToPatient();  ==> TBC
+                        if (row["ConfigFieldName"].ToString() == "Emergency_Email")
+                        {
+                            row["Value"] = "";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "Medical Recs (Y/N)")
+                        {
+                            row["Value"] = "";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "Med. Rec Signed (Y/N)")
+                        {
+                            row["Value"] = "";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "Guarantor_Street")
+                        {
+                            row["Value"] = "";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "Guarantor_CityStateZip")
+                        {
+                            row["Value"] = "";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "Patient_Email")
+                        {
+                            row["Value"] = "";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "RX Patient Name (Y/N)")
+                        {
+                            row["Value"] = "Y";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "DOB (Y/N)")
+                        {
+                            row["Value"] = "Y";
+                        }
+                        if (row["ConfigFieldName"].ToString() == "Guarantor_Country")
+                        {
+                            row["Value"] = "USA";
+                        }
+                    }
+                    UpdateMLValues(ConfigData, MLData);
+                    foreach (DataRow row in ConfigData.Rows)
+                    {
+                        CheckEmpty(ConfigData, row, "PPADeliveryAddress", "PPA Delivery Address (Y/N)");
+                        CheckEmpty(ConfigData, row, "RXDocNPI", "RX_Dr_NPI(Y/N)");
+                        //MakeCellEmptyIfNoDigits(ConfigData,row, "PrimaryInsurancePolicyID");  ==> TBC
+                        CheckPPASignedDate(ConfigData, row);
+                        CheckRelationshipPat(ConfigData, row);
+                        CheckRxDRName(ConfigData, row);
+                        DateFormat(ConfigData, row, "DOS");
+                    }
+                    foreach (DataRow rowToRemove in rowsToRemove)
+                    {
+                        ConfigData.Rows.Remove(rowToRemove);
+                    }
+                    var SortedConfigData = ConfigData.AsEnumerable()
+                       .OrderBy(row => row.Field<long>("OrderId"))
+                       .ThenBy(row => row.Field<int>("FieldId"))
+                       .CopyToDataTable();
+                    string XMLConfig = GenerateXML(SortedConfigData);
+                    DAL.InsertData(XMLConfig);
+                    Console.WriteLine(XMLConfig);
+                }
+                else
+                {
+                    __PLogger.Log.Info(" ==== No Pending Orders =====");
+                }
+            }
+            catch (Exception ex)
+            {
+                __PLogger.Log.Error("AutoMergeData Exception occured.\n =>" + ex.Message);
+                __PLogger.Log.Error(ex.StackTrace);
+            }
+            __PLogger.Log.Info("AutoMergeData ends.");
+        }
+
+ 
+
+ 
+
+ 
+
+        //Transformation Methods
+        public static void SplitMLName(DataTable MLData, DataRow row)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["FieldMappingName"].ToString();
+
+ 
+
+            if (fieldMappingName == "Patient_Name")
+            {
+                // Split the name
+                (string firstName, string middleName, string lastName) = SplitName(row["Value"].ToString());
+
+ 
+
+                // Update rows in MLData DataTable
+                foreach (DataRow mlrow in MLData.Rows)
+                {
+                    int MLOrderId = Convert.ToInt32(mlrow["OrderId"]);
+                    string fieldName = mlrow["FieldMappingName"].ToString();
+
+ 
+
+                    if (OrderId == MLOrderId)
+                    {
+                        switch (fieldName)
+                        {
+                            case "PatientLastName":
+                                mlrow["Value"] = lastName;
+                                break;
+                            case "PatientFirstName":
+                                mlrow["Value"] = firstName;
+                                break;
+                            case "PatientMiddleName":
+                                mlrow["Value"] = middleName;
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+        public static (string, string, string) SplitName(string value)
+        {
+            string firstName = "";
+            string middleName = "";
+            string lastName = "";
+
+ 
+
+            if (!string.IsNullOrEmpty(value))
+            {
+                if (value.Contains(','))
+                {
+                    string[] valueArray = value.Split(',');
+                    lastName = valueArray[0].Trim();
+                    string name = valueArray[1].Trim();
+                    if (name.Contains(' '))
+                    {
+                        string[] nameArray = name.Split(' ');
+                        firstName = nameArray[0];
+                        middleName = nameArray[1];
+                    }
+                    else
+                    {
+                        firstName = name;
+                    }
+                }
+                else if (value.Contains(' '))
+                {
+                    string[] valueArray = value.Split(' ');
+                    firstName = valueArray[0].Trim();
+                    int len = valueArray.Length;
+                    if (len > 2)
+                    {
+                        middleName = valueArray[1].Trim();
+                        lastName = valueArray[len - 1].Trim();
+                    }
+                    else if (len == 2)
+                    {
+                        lastName = valueArray[1].Trim();
+                    }
+                }
+            }
+
+ 
+
+            return (firstName, middleName, lastName);
+        }
+        public static void SplitMLCityStateZip(DataTable MLData, DataRow row)
+        {
+
+ 
+
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["FieldMappingName"].ToString();
+
+ 
+
+            if (fieldMappingName == "Patient_CityStateZip")
+            {
+                //foreach (DataRow newMLRow in newMLRows)
+                //{
+                //    MLData.Rows.Add(newMLRow);
+                //}
+                // Split the City, State, Zip
+                (string City, string State, string Zip) = MatchCityStateZip(row["Value"].ToString());
+
+ 
+
+                // Update rows in MLData DataTable
+                foreach (DataRow mlrow in MLData.Rows)
+                {
+                    int MLOrderId = Convert.ToInt32(mlrow["OrderId"]);
+                    string fieldName = mlrow["FieldMappingName"].ToString();
+
+ 
+
+                    if (OrderId == MLOrderId)
+                    {
+                        switch (fieldName)
+                        {
+                            case "Patient_City1":
+                                mlrow["Value"] = City;
+                                break;
+                            case "Patient_State1":
+                                mlrow["Value"] = State;
+                                break;
+                            case "Patient_Zip1":
+                                mlrow["Value"] = Zip;
+                                break;
+                        }
+                    }
+                }
+            }
+
+ 
+
+        }
+        public static (string, string, string) MatchCityStateZip(string text)
+        {
+            string city = "";
+            string state = "";
+            string zip = "";
+            Regex regex = new Regex(@"^([^,]+)?,?\s?([A-Z]{2})(?:\s(\d{5,9}(?:-\d{3,4})?))?$");
+            Match match = regex.Match(text);
+            if (match.Success)
+            {
+                city = match.Groups[1].Value.Trim();
+                state = match.Groups[2].Value.Trim();
+                zip = match.Groups[3].Value.Trim();
+            }
+            return (city, state, zip);
+        }
+        public static void DateFormat(DataTable ConfigData, DataRow row, string columnName)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == columnName)
+            {
+                // Split the name
+                string DataValue = DateFinderUpdated(row["Value"].ToString());
+                // Update rows in ConfigData DataTable
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((OrderId == ConfigOrderId) && (fieldName == columnName))
+                    {
+                        configrow["Value"] = DataValue;
+                    }
+                }
+            }
+        }
+        public static string DateFinderUpdated(string dateStr)
+        {
+            Match x = Regex.Match(dateStr, genericRegex, RegexOptions.IgnoreCase);
+            if (x.Success)
+            {
+                return x.Value;
+            }
+            else
+            {
+                return "";
+            }
+        }
+        public static void ConcatenatePhysician(DataTable ConfigData, DataRow row)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == "Physician_Name")
+            {
+                string physicianName = ConcatPhy(ConfigData, OrderId);
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["FieldName"].ToString();
+
+ 
+
+                    if ((OrderId == ConfigOrderId) && (fieldName == "Doctor"))
+                    {
+                        configrow["Value"] = physicianName;
+                    }
+                }
+            }
+
+ 
+
+ 
+
+        }
+        public static string ConcatPhy(DataTable ConfigData, int OrderId)
+        {
+            string firstName = "";
+            string lastName = "";
+            string physicianName = "";
+            foreach (DataRow configrow in ConfigData.Rows)
+            {
+                int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                string fieldName = configrow["FieldName"].ToString();
+
+ 
+
+                if ((OrderId == ConfigOrderId) && (fieldName == "ProviderFirstName"))
+                {
+                    firstName = configrow["Value"].ToString();
+                }
+                if ((OrderId == ConfigOrderId) && (fieldName == "ProviderLastName"))
+                {
+                    lastName = configrow["Value"].ToString();
+                }
+            }
+            physicianName = string.Concat(firstName, lastName);
+            return physicianName;
+        }
+        public static void ReplaceICD10Code(DataTable dataTable, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == "ICD10Code")
+            {
+                string replacedCode = ReplaceFirstCharAndHyphen(row["Value"].ToString());
+                foreach (DataRow dr in dataTable.Rows)
+                {
+                    int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                    string fieldName = dr["FieldName"].ToString();
+
+ 
+
+                    if ((orderId == currentOrderId) && (fieldName == "ICD10Codes"))
+                    {
+                        dr["Value"] = replacedCode;
+                    }
+                }
+            }
+        }
+        public static string ReplaceFirstCharAndHyphen(string icd10Code)
+        {
+            char firstChar = icd10Code[0];
+            switch (firstChar)
+            {
+                case '5':
+                    firstChar = 'S';
+                    break;
+                case '2':
+                    firstChar = 'Z';
+                    break;
+                case '6':
+                    firstChar = 'G';
+                    break;
+            }
+            string replacedCode = firstChar + icd10Code.Substring(1);
+            replacedCode = replacedCode.Replace('-', '.');
+            return replacedCode;
+        }
+        public static void PatientNameTransformation(DataTable dataTable, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            string targetWord = "LEGAL";
+            List<string> substringList = new List<string> { "MANDATORY", "AXINATURY", "INFORMATION" };
+
+ 
+
+            if (fieldMappingName == "PatientName")
+            {
+                string patientName = row["Value"].ToString();
+                patientName = patientName.Split(new string[] { targetWord }, StringSplitOptions.None)[0].Trim();
+
+ 
+
+                string patientName1 = (patientName.Length <= 3 || patientName.Length >= 50 || substringList.Any(substring => patientName.Contains(substring)))
+               ? ""
+               : Regex.Replace(patientName, @"^[^a-zA-Z0-9]+", "");
+
+ 
+
+                foreach (DataRow dr in dataTable.Rows)
+                {
+                    int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                    string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == currentOrderId) && (fieldName == "PatientName"))
+                    {
+                        dr["Value"] = patientName;
+                    }
+                    else if ((orderId == currentOrderId) && (fieldName == "PatientName1"))
+                    {
+                        dr["Value"] = patientName1;
+                    }
+                }
+            }
+
+        }
+
+public static void MakeCellEmptyIfNoAlphabet(DataTable dataTable, DataRow row, string columnName)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == columnName)
+            {
+                string patientFirstName = row["Value"].ToString();
+                bool hasAlphabet = false;
+                foreach (char c in patientFirstName)
+                {
+                    if (char.IsLetter(c))
+                    {
+                        hasAlphabet = true;
+                        break;
+                    }
+                }
+
+ 
+
+                if (!hasAlphabet)
+                {
+                    foreach (DataRow dr in dataTable.Rows)
+                    {
+                        int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                        string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                        if ((orderId == currentOrderId) && (fieldName == columnName))
+                        {
+                            dr["Value"] = "";
+                        }
+                    }
+                }
+            }
+        }
+        public static void SplitConfigName(DataTable ConfigData, DataRow row)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == "PatientName1")
+            {
+                // Split the name
+                (string firstName, string middleName, string lastName) = SplitName(row["Value"].ToString());
+
+ 
+
+                // Update rows in MLData DataTable
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if (OrderId == ConfigOrderId)
+                    {
+                        switch (fieldName)
+                        {
+                            case "PatientLastName":
+                                configrow["Value"] = lastName;
+                                break;
+                            case "PatientFirstName":
+                                configrow["Value"] = firstName;
+                                break;
+                            case "PatientMiddleName":
+                                configrow["Value"] = middleName;
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+        public static void DocTitlePresent(DataTable ConfigData, DataRow row)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == "ProviderLastName")
+            {
+                string providerLastName = row["Value"].ToString();
+                bool containsSubstring = substringList.Any(substring => providerLastName.Contains(substring));
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((OrderId == ConfigOrderId) && (fieldName == "Dr Title (Y/N)"))
+                    {
+                        configrow["Value"] = containsSubstring ? "Y" : "N";
+                    }
+                }
+            }
+        }
+        public static void CheckEmpty(DataTable ConfigData, DataRow row, string fieldToBeChecked, string newField)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == fieldToBeChecked)
+            {
+                string fieldValue = row["Value"].ToString();
+                string result = string.IsNullOrEmpty(fieldValue) ? "N" : "Y";
+                foreach (DataRow dr in ConfigData.Rows)
+                {
+                    int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                    string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == currentOrderId) && (fieldName == newField))
+                    {
+                        dr["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static void MakeCellEmptyIfNoDigits(DataTable dataTable, DataRow row, string columnName)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == columnName)
+            {
+                string fieldValue = row["Value"].ToString();
+                bool hasDigits = false;
+                foreach (char c in fieldValue)
+                {
+                    if (char.IsLetter(c))
+                    {
+                        hasDigits = true;
+                        break;
+                    }
+                }
+
+ 
+
+                if (!hasDigits)
+                {
+                    foreach (DataRow dr in dataTable.Rows)
+                    {
+                        int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                        string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                        if ((orderId == currentOrderId) && (fieldName == columnName))
+                        {
+                            dr["Value"] = "";
+                        }
+                    }
+                }
+            }
+        }
+        public static void CheckPPASignedDate(DataTable ConfigData, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == "PPA Signed Date (Y/N)")
+            {
+                string result = checkNull(ConfigData, orderId);
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == ConfigOrderId) && (fieldName == "PPA Signed Date (Y/N)"))
+                    {
+                        configrow["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static string checkNull(DataTable ConfigData, int OrderId)
+        {
+            bool PPASign = true;
+            bool DOS = true;
+            string isPPASign = "";
+            foreach (DataRow configrow in ConfigData.Rows)
+            {
+                int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                string fieldName = configrow["FieldName"].ToString();
+
+ 
+
+                if ((OrderId == ConfigOrderId) && (fieldName == "PPASign"))
+                {
+                    PPASign = configrow.IsNull("Value");
+                }
+                if ((OrderId == ConfigOrderId) && (fieldName == "DOS"))
+                {
+                    DOS = configrow.IsNull("Value");
+                }
+            }
+            isPPASign = (PPASign & DOS) ? "N" : "Y";
+            return isPPASign;
+        }
+        public static void CheckRelationshipPat(DataTable ConfigData, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == "PPA Signed Date (Y/N)")
+            {
+                string fieldValue = row["Value"].ToString();
+                string result = (fieldValue == "N") ? "N" : "Y";
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == ConfigOrderId) && (fieldName == "Relationship to Pat.indicated(Y/N)"))
+                    {
+                        configrow["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static void CheckRxDRName(DataTable ConfigData, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == "RX Dr 1st & Last Name (Y/N)")
+            {
+                string result = checkNullRxDR(ConfigData, orderId);
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == ConfigOrderId) && (fieldName == "RX Dr 1st & Last Name (Y/N)"))
+                    {
+                        configrow["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static string checkNullRxDR(DataTable ConfigData, int OrderId)
+        {
+            bool PPASign = true;
+            bool DOS = true;
+            string isPPASign;
+            foreach (DataRow configrow in ConfigData.Rows)
+            {
+                int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                string fieldName = configrow["FieldName"].ToString();
+
+ 
+
+                if ((OrderId == ConfigOrderId) && (fieldName == "ProviderLastName"))
+                {
+                    PPASign = configrow.IsNull("Value");
+                }
+                if ((OrderId == ConfigOrderId) && (fieldName == "ProviderFirstName"))
+                {
+                    DOS = configrow.IsNull("Value");
+                }
+            }
+            isPPASign = (!PPASign & !DOS) ? "Y" : "N";
+            return isPPASign;
+        }
+
+ 
+
+        //Update and Merge ML and Config Data
+        public static void UpdateMLValues(DataTable ConfigData, DataTable MLData)
+        {
+            Dictionary<string, string> comparisonColumns = new Dictionary<string, string>
+            {
+            { "PatientFirstName", "PatientFirstName" },
+            { "PatientLastName", "PatientLastName" },
+            { "PatientMiddleName", "PatientMiddleName" },
+            { "City", "Patient_City1" },
+            { "HomePhone", "Patient_Phone" },
+            { "BillingAddress", "Patient_Street" },
+            { "InjuryState", "Patient_State1" },
+            { "Zip", "Patient_Zip1" },
+            { "CellNo", "Patient_Mobile" },
+            { "EmergencyPhone", "Emergency_Phone" },
+            { "EmergencyName", "Emergency_Name" },
+            { "Emergency_Email", "Emergency_Email" }
+            };
+
+ 
+
+            Dictionary<string, string> comparisonColumns1 = new Dictionary<string, string>
+            {
+           // { "PrimaryInsuranceName", "Payor Name" },
+            { "DOB", "DOB" },
+            { "GurantorsName", "Guarantor_Name" },
+            { "Physician_Name", "Physician_Name" },
+            { "Gender", "Sex" },
+           // { "PrimaryInsurancePolicyID", "Payor ID" },
+            { "Guarantor_Street", "Guarantor_Street" },
+            { "Patient_Email", "Patient_Email" },
+            { "Med. Rec Signed (Y/N)", "Electronically_signed(Y/N)" },
+            { "Medical Recs (Y/N)", "Medical_Record_present(Y/N)" },
+            { "Guarantor_CityStateZip", "Guarantor_CityStateZip" }
+            };
+
+ 
+
+            Dictionary<string, string> comparisonColumns2 = new Dictionary<string, string>
+            {
+            { "HomePhone", "Patient_Phone" },
+            { "CellNo", "Patient_Mobile" },
+            { "DOB", "DOB" },
+            { "Gender", "Sex" },
+            { "Med. Rec Signed (Y/N)", "Electronically_signed(Y/N)" },
+            { "Medical Recs (Y/N)", "Medical_Record_present(Y/N)" },
+            { "Guarantor_CityStateZip", "Guarantor_CityStateZip" },
+            { "Guarantor_Street", "Guarantor_Street" }
+            };
+
+ 
+
+            Dictionary<string, string> comparisonColumns4 = new Dictionary<string, string>
+            {
+            { "PrimaryInsuranceName", "Payor Name" },
+            { "GurantorsName", "Guarantor_Name" },
+            { "PrimaryInsurancePolicyID", "Payor ID" },
+            { "Physician_Name", "Physician_Name" },
+            { "PatientFirstName", "PatientFirstName" },
+            { "PatientLastName", "PatientLastName" },
+            { "PatientMiddleName", "PatientMiddleName" },
+            { "City", "Patient_City1" },
+            { "BillingAddress", "Patient_Street" },
+            { "Zip", "Patient_Zip1" },
+            { "InjuryState", "Patient_State1" },
+            { "EmergencyName", "Emergency_Name" },
+            { "EmergencyPhone", "Emergency_Phone" },
+            { "Patient_Email", "Patient_Email" },
+            { "Emergency_Email", "Emergency_Email" }
+            };
+
+ 
+
+            
+            // Iterate through each row in the DataTable
+            foreach (DataRow row in ConfigData.Rows)
+            {
+                // Extract necessary values from the row
+                int orderId = Convert.ToInt32(row["OrderId"]);
+                string configFieldName = row["ConfigFieldName"].ToString();
+
+ 
+
+                // Check if the orderId exists in MLData DataTable
+                DataRow[] matchingRows = MLData.Select($"OrderId = {orderId}");
+                if (matchingRows.Length > 0)
+                {
+                    string PatName1="";
+                    string PatName="";
+                    foreach (DataRow configrow in ConfigData.Rows)
+                    {
+                        int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                        string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                        if ((orderId == ConfigOrderId) && (fieldName == "PatientLastName1"))
+                        {
+                            PatName1 =  configrow["Value"].ToString();
+                        }
+                        if ((orderId == ConfigOrderId) && (fieldName == "PatientName"))
+                        {
+                            PatName = configrow["Value"].ToString();
+                        }
+                    }
+
+ 
+
+                    if (string.IsNullOrEmpty(PatName1) || !string.IsNullOrEmpty(PatName))
+                    {
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Check if the configFieldName matches any key in comparison_columns
+                            if (configFieldName == lookupCol)
+                            {
+                                // Search for the matching value in MLData DataTable
+                                DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                                // Handle special cases for lookupColumn
+                                if (tempRows.Length == 0)
+                                {
+                                    if (lookupCol == "Patient_City1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_City'");
+                                    }
+                                    else if (lookupCol == "Patient_State1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_State'");
+                                    }
+                                    else if (lookupCol == "Patient_Zip1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_Zip'");
+                                    }
+                                }
+
+ 
+
+                                // If matching value found, update ConfigData DataTable
+                                if (tempRows.Length > 0)
+                                {
+                                    string mlValue = tempRows[0]["Value"].ToString();
+                                    string attribute = tempRows[0]["Attribute"].ToString();
+                                    object pageNoObject = tempRows[0]["PageNo"];
+                                    int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                    int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+                                    if (!string.IsNullOrEmpty(mlValue))
+                                    {
+                                        foreach (DataRow configrow in ConfigData.Rows)
+                                        {
+                                            int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                            string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                            if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                            {
+                                                configrow["Value"] = mlValue;
+                                                configrow["Attribute"] = attribute;
+                                                configrow["PageNo"] = pageNo;
+                                                configrow["Confidence"] = confidence;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+ 
+
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns1)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Search for matching rows in MLData DataTable
+                            DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                            // If matching rows are found
+                            if (tempRows.Length > 0)
+                            {
+                                string mlValue = tempRows[0]["Value"].ToString();
+                                string attribute = tempRows[0]["Attribute"].ToString();
+                                object pageNoObject = tempRows[0]["PageNo"];
+                                int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+
+ 
+
+                                // Check if mlValue is not empty and update ConfigData DataTable
+                                if (!string.IsNullOrEmpty(mlValue))
+                                {
+                                    foreach (DataRow configrow in ConfigData.Rows)
+                                    {
+                                        int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                        string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                        if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                        {
+                                            // Check if the corresponding cell in ConfigData DataTable is empty
+                                            if (string.IsNullOrEmpty(configrow["Value"].ToString()))
+                                            {
+                                                configrow["Value"] = mlValue;
+                                                configrow["Attribute"] = attribute;
+                                                configrow["PageNo"] = pageNo;
+                                                configrow["Confidence"] = confidence;
+                                            }                                         
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns2)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Search for matching rows in MLData DataTable
+                            DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                            // If matching rows are found
+                            if (tempRows.Length > 0)
+                            {
+                                string mlValue = tempRows[0]["Value"].ToString();
+                                string attribute = tempRows[0]["Attribute"].ToString();
+                                object pageNoObject = tempRows[0]["PageNo"];
+                                int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+
+ 
+
+                                // Check if mlValue is not empty and update ConfigData DataTable
+                                if (!string.IsNullOrEmpty(mlValue))
+                                {
+                                    foreach (DataRow configrow in ConfigData.Rows)
+                                    {
+                                        int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                        string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                        if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                        {
+                                            configrow["Value"] = mlValue;
+                                            configrow["Attribute"] = attribute;
+                                            configrow["PageNo"] = pageNo;
+                                            configrow["Confidence"] = confidence;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns4)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Check if the configFieldName matches any key in comparison_columns
+                            if (configFieldName == lookupCol)
+                            {
+                                // Search for the matching value in MLData DataTable
+                                DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                                // Handle special cases for lookupColumn
+                                if (tempRows.Length == 0)
+                                {
+                                    if (lookupCol == "Patient_City1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_City'");
+                                    }
+                                    else if (lookupCol == "Patient_State1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_State'");
+                                    }
+                                    else if (lookupCol == "Patient_Zip1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_Zip'");
+                                    }
+                                }
+
+ 
+
+                                // If matching value found, update ConfigData DataTable
+                                if (tempRows.Length > 0)
+                                {
+                                    string mlValue = tempRows[0]["Value"].ToString();
+                                    string attribute = tempRows[0]["Attribute"].ToString();
+                                    object pageNoObject = tempRows[0]["PageNo"];
+                                    int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                    int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+
+ 
+
+                                    if (!string.IsNullOrEmpty(mlValue))
+                                    {
+                                        foreach (DataRow configrow in ConfigData.Rows)
+                                        {
+                                            int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                            string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                            if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                            {
+                                                // Check if the corresponding cell in ConfigData DataTable is empty
+                                                if (string.IsNullOrEmpty(configrow["Value"].ToString()))
+                                                {
+                                                    configrow["Value"] = mlValue;
+                                                    configrow["Attribute"] = attribute;
+                                                    configrow["PageNo"] = pageNo;
+                                                    configrow["Confidence"] = confidence;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+ 
+
+                    }
+                }
+            }
+        }
+
+ 
+
+        //Generate XML from Merged DataTable
+        public static string GenerateXML(DataTable ConfigData)
+        {
+        string xmlData = "";
+        __PLogger.Log.Info("GenerateXml starts.");
+        try
+        {
+            //Convert output datatable to XML object
+            HeaderData objConfig = new HeaderData();
+            //objConfig.Header = new HeaderData();
+            objConfig.FieldList = MapHeaderData(ConfigData);
+            if (objConfig != null)
+            {
+                xmlData = ToXML(objConfig);
+                __PLogger.Log.Info("Xml has been created");
+                if (!string.IsNullOrWhiteSpace(xmlData))
+                {
+                    xmlData = xmlData.Replace("<?xml version=\"1.0\" encoding=\"utf-16\"?>\r\n", "");
+                    xmlData = xmlData.Replace("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n", "");
+                    __PLogger.Log.Info(xmlData);
+                }
+            }
+            else
+            {
+                __PLogger.Log.Info("No Data for XML convertion Process");
+            }
+        }
+        catch (Exception ex)
+        {
+            xmlData = "";
+            __PLogger.Log.Error("GenerateXml Exception occured.\n =>" + ex.Message);
+            __PLogger.Log.Error(ex.StackTrace);
+        }
+        __PLogger.Log.Info("GenerateXml ends.");
+        return xmlData;
+        }
+        public static List<Record> MapHeaderData(DataTable dtMap)
+        {
+            List<Record> objHdrLst = new List<Record>();
+            Record objHdr = new Record();
+            try
+            {
+                if (dtMap.Rows.Count > 0)
+                {
+                    objHdrLst = dtMap.AsEnumerable().Select(row => new Record
+                    {
+                        OrderId = row.Field<long>("OrderId"),
+                        Value = row.Field<string>("Value"),
+                        Attribute = row.Field<string>("Attribute"),
+                        PageNo = row.Field<int?>("PageNo").GetValueOrDefault(),
+                        FieldId = row.Field<int>("FieldId"),
+                        Confidence = row.Field<int>("Confidence"),
+                        FieldName = row.Field<string>("FieldName"),
+                    }).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                objHdrLst = new List<Record>();
+                __PLogger.Log.Error("MapHeaderSTPData Exception occured.\n =>" + ex.Message);
+                __PLogger.Log.Error(ex.StackTrace);
+            }
+            return objHdrLst;
+        }
+
+public static void MakeCellEmptyIfNoAlphabet(DataTable dataTable, DataRow row, string columnName)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == columnName)
+            {
+                string patientFirstName = row["Value"].ToString();
+                bool hasAlphabet = false;
+                foreach (char c in patientFirstName)
+                {
+                    if (char.IsLetter(c))
+                    {
+                        hasAlphabet = true;
+                        break;
+                    }
+                }
+
+ 
+
+                if (!hasAlphabet)
+                {
+                    foreach (DataRow dr in dataTable.Rows)
+                    {
+                        int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                        string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                        if ((orderId == currentOrderId) && (fieldName == columnName))
+                        {
+                            dr["Value"] = "";
+                        }
+                    }
+                }
+            }
+        }
+        public static void SplitConfigName(DataTable ConfigData, DataRow row)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == "PatientName1")
+            {
+                // Split the name
+                (string firstName, string middleName, string lastName) = SplitName(row["Value"].ToString());
+
+ 
+
+                // Update rows in MLData DataTable
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if (OrderId == ConfigOrderId)
+                    {
+                        switch (fieldName)
+                        {
+                            case "PatientLastName":
+                                configrow["Value"] = lastName;
+                                break;
+                            case "PatientFirstName":
+                                configrow["Value"] = firstName;
+                                break;
+                            case "PatientMiddleName":
+                                configrow["Value"] = middleName;
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+        public static void DocTitlePresent(DataTable ConfigData, DataRow row)
+        {
+            int OrderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+
+ 
+
+            if (fieldMappingName == "ProviderLastName")
+            {
+                string providerLastName = row["Value"].ToString();
+                bool containsSubstring = substringList.Any(substring => providerLastName.Contains(substring));
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((OrderId == ConfigOrderId) && (fieldName == "Dr Title (Y/N)"))
+                    {
+                        configrow["Value"] = containsSubstring ? "Y" : "N";
+                    }
+                }
+            }
+        }
+        public static void CheckEmpty(DataTable ConfigData, DataRow row, string fieldToBeChecked, string newField)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == fieldToBeChecked)
+            {
+                string fieldValue = row["Value"].ToString();
+                string result = string.IsNullOrEmpty(fieldValue) ? "N" : "Y";
+                foreach (DataRow dr in ConfigData.Rows)
+                {
+                    int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                    string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == currentOrderId) && (fieldName == newField))
+                    {
+                        dr["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static void MakeCellEmptyIfNoDigits(DataTable dataTable, DataRow row, string columnName)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == columnName)
+            {
+                string fieldValue = row["Value"].ToString();
+                bool hasDigits = false;
+                foreach (char c in fieldValue)
+                {
+                    if (char.IsLetter(c))
+                    {
+                        hasDigits = true;
+                        break;
+                    }
+                }
+
+ 
+
+                if (!hasDigits)
+                {
+                    foreach (DataRow dr in dataTable.Rows)
+                    {
+                        int currentOrderId = Convert.ToInt32(dr["OrderId"]);
+                        string fieldName = dr["ConfigFieldName"].ToString();
+
+ 
+
+                        if ((orderId == currentOrderId) && (fieldName == columnName))
+                        {
+                            dr["Value"] = "";
+                        }
+                    }
+                }
+            }
+        }
+        public static void CheckPPASignedDate(DataTable ConfigData, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == "PPA Signed Date (Y/N)")
+            {
+                string result = checkNull(ConfigData, orderId);
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == ConfigOrderId) && (fieldName == "PPA Signed Date (Y/N)"))
+                    {
+                        configrow["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static string checkNull(DataTable ConfigData, int OrderId)
+        {
+            bool PPASign = true;
+            bool DOS = true;
+            string isPPASign = "";
+            foreach (DataRow configrow in ConfigData.Rows)
+            {
+                int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                string fieldName = configrow["FieldName"].ToString();
+
+ 
+
+                if ((OrderId == ConfigOrderId) && (fieldName == "PPASign"))
+                {
+                    PPASign = configrow.IsNull("Value");
+                }
+                if ((OrderId == ConfigOrderId) && (fieldName == "DOS"))
+                {
+                    DOS = configrow.IsNull("Value");
+                }
+            }
+            isPPASign = (PPASign & DOS) ? "N" : "Y";
+            return isPPASign;
+        }
+        public static void CheckRelationshipPat(DataTable ConfigData, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == "PPA Signed Date (Y/N)")
+            {
+                string fieldValue = row["Value"].ToString();
+                string result = (fieldValue == "N") ? "N" : "Y";
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == ConfigOrderId) && (fieldName == "Relationship to Pat.indicated(Y/N)"))
+                    {
+                        configrow["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static void CheckRxDRName(DataTable ConfigData, DataRow row)
+        {
+            int orderId = Convert.ToInt32(row["OrderId"]);
+            string fieldMappingName = row["ConfigFieldName"].ToString();
+            if (fieldMappingName == "RX Dr 1st & Last Name (Y/N)")
+            {
+                string result = checkNullRxDR(ConfigData, orderId);
+                foreach (DataRow configrow in ConfigData.Rows)
+                {
+                    int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                    string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                    if ((orderId == ConfigOrderId) && (fieldName == "RX Dr 1st & Last Name (Y/N)"))
+                    {
+                        configrow["Value"] = result;
+                    }
+                }
+            }
+        }
+        public static string checkNullRxDR(DataTable ConfigData, int OrderId)
+        {
+            bool PPASign = true;
+            bool DOS = true;
+            string isPPASign;
+            foreach (DataRow configrow in ConfigData.Rows)
+            {
+                int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                string fieldName = configrow["FieldName"].ToString();
+
+ 
+
+                if ((OrderId == ConfigOrderId) && (fieldName == "ProviderLastName"))
+                {
+                    PPASign = configrow.IsNull("Value");
+                }
+                if ((OrderId == ConfigOrderId) && (fieldName == "ProviderFirstName"))
+                {
+                    DOS = configrow.IsNull("Value");
+                }
+            }
+            isPPASign = (!PPASign & !DOS) ? "Y" : "N";
+            return isPPASign;
+        }
+
+ 
+
+        //Update and Merge ML and Config Data
+        public static void UpdateMLValues(DataTable ConfigData, DataTable MLData)
+        {
+            Dictionary<string, string> comparisonColumns = new Dictionary<string, string>
+            {
+            { "PatientFirstName", "PatientFirstName" },
+            { "PatientLastName", "PatientLastName" },
+            { "PatientMiddleName", "PatientMiddleName" },
+            { "City", "Patient_City1" },
+            { "HomePhone", "Patient_Phone" },
+            { "BillingAddress", "Patient_Street" },
+            { "InjuryState", "Patient_State1" },
+            { "Zip", "Patient_Zip1" },
+            { "CellNo", "Patient_Mobile" },
+            { "EmergencyPhone", "Emergency_Phone" },
+            { "EmergencyName", "Emergency_Name" },
+            { "Emergency_Email", "Emergency_Email" }
+            };
+
+ 
+
+            Dictionary<string, string> comparisonColumns1 = new Dictionary<string, string>
+            {
+           // { "PrimaryInsuranceName", "Payor Name" },
+            { "DOB", "DOB" },
+            { "GurantorsName", "Guarantor_Name" },
+            { "Physician_Name", "Physician_Name" },
+            { "Gender", "Sex" },
+           // { "PrimaryInsurancePolicyID", "Payor ID" },
+            { "Guarantor_Street", "Guarantor_Street" },
+            { "Patient_Email", "Patient_Email" },
+            { "Med. Rec Signed (Y/N)", "Electronically_signed(Y/N)" },
+            { "Medical Recs (Y/N)", "Medical_Record_present(Y/N)" },
+            { "Guarantor_CityStateZip", "Guarantor_CityStateZip" }
+            };
+
+ 
+
+            Dictionary<string, string> comparisonColumns2 = new Dictionary<string, string>
+            {
+            { "HomePhone", "Patient_Phone" },
+            { "CellNo", "Patient_Mobile" },
+            { "DOB", "DOB" },
+            { "Gender", "Sex" },
+            { "Med. Rec Signed (Y/N)", "Electronically_signed(Y/N)" },
+            { "Medical Recs (Y/N)", "Medical_Record_present(Y/N)" },
+            { "Guarantor_CityStateZip", "Guarantor_CityStateZip" },
+            { "Guarantor_Street", "Guarantor_Street" }
+            };
+
+ 
+
+            Dictionary<string, string> comparisonColumns4 = new Dictionary<string, string>
+            {
+            { "PrimaryInsuranceName", "Payor Name" },
+            { "GurantorsName", "Guarantor_Name" },
+            { "PrimaryInsurancePolicyID", "Payor ID" },
+            { "Physician_Name", "Physician_Name" },
+            { "PatientFirstName", "PatientFirstName" },
+            { "PatientLastName", "PatientLastName" },
+            { "PatientMiddleName", "PatientMiddleName" },
+            { "City", "Patient_City1" },
+            { "BillingAddress", "Patient_Street" },
+            { "Zip", "Patient_Zip1" },
+            { "InjuryState", "Patient_State1" },
+            { "EmergencyName", "Emergency_Name" },
+            { "EmergencyPhone", "Emergency_Phone" },
+            { "Patient_Email", "Patient_Email" },
+            { "Emergency_Email", "Emergency_Email" }
+            };
+
+ 
+
+            
+            // Iterate through each row in the DataTable
+            foreach (DataRow row in ConfigData.Rows)
+            {
+                // Extract necessary values from the row
+                int orderId = Convert.ToInt32(row["OrderId"]);
+                string configFieldName = row["ConfigFieldName"].ToString();
+
+ 
+
+                // Check if the orderId exists in MLData DataTable
+                DataRow[] matchingRows = MLData.Select($"OrderId = {orderId}");
+                if (matchingRows.Length > 0)
+                {
+                    string PatName1="";
+                    string PatName="";
+                    foreach (DataRow configrow in ConfigData.Rows)
+                    {
+                        int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                        string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                        if ((orderId == ConfigOrderId) && (fieldName == "PatientLastName1"))
+                        {
+                            PatName1 =  configrow["Value"].ToString();
+                        }
+                        if ((orderId == ConfigOrderId) && (fieldName == "PatientName"))
+                        {
+                            PatName = configrow["Value"].ToString();
+                        }
+                    }
+
+ 
+
+                    if (string.IsNullOrEmpty(PatName1) || !string.IsNullOrEmpty(PatName))
+                    {
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Check if the configFieldName matches any key in comparison_columns
+                            if (configFieldName == lookupCol)
+                            {
+                                // Search for the matching value in MLData DataTable
+                                DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                                // Handle special cases for lookupColumn
+                                if (tempRows.Length == 0)
+                                {
+                                    if (lookupCol == "Patient_City1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_City'");
+                                    }
+                                    else if (lookupCol == "Patient_State1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_State'");
+                                    }
+                                    else if (lookupCol == "Patient_Zip1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_Zip'");
+                                    }
+                                }
+
+ 
+
+                                // If matching value found, update ConfigData DataTable
+                                if (tempRows.Length > 0)
+                                {
+                                    string mlValue = tempRows[0]["Value"].ToString();
+                                    string attribute = tempRows[0]["Attribute"].ToString();
+                                    object pageNoObject = tempRows[0]["PageNo"];
+                                    int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                    int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+                                    if (!string.IsNullOrEmpty(mlValue))
+                                    {
+                                        foreach (DataRow configrow in ConfigData.Rows)
+                                        {
+                                            int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                            string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                            if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                            {
+                                                configrow["Value"] = mlValue;
+                                                configrow["Attribute"] = attribute;
+                                                configrow["PageNo"] = pageNo;
+                                                configrow["Confidence"] = confidence;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+ 
+
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns1)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Search for matching rows in MLData DataTable
+                            DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                            // If matching rows are found
+                            if (tempRows.Length > 0)
+                            {
+                                string mlValue = tempRows[0]["Value"].ToString();
+                                string attribute = tempRows[0]["Attribute"].ToString();
+                                object pageNoObject = tempRows[0]["PageNo"];
+                                int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+
+ 
+
+                                // Check if mlValue is not empty and update ConfigData DataTable
+                                if (!string.IsNullOrEmpty(mlValue))
+                                {
+                                    foreach (DataRow configrow in ConfigData.Rows)
+                                    {
+                                        int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                        string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                        if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                        {
+                                            // Check if the corresponding cell in ConfigData DataTable is empty
+                                            if (string.IsNullOrEmpty(configrow["Value"].ToString()))
+                                            {
+                                                configrow["Value"] = mlValue;
+                                                configrow["Attribute"] = attribute;
+                                                configrow["PageNo"] = pageNo;
+                                                configrow["Confidence"] = confidence;
+                                            }                                         
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns2)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Search for matching rows in MLData DataTable
+                            DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                            // If matching rows are found
+                            if (tempRows.Length > 0)
+                            {
+                                string mlValue = tempRows[0]["Value"].ToString();
+                                string attribute = tempRows[0]["Attribute"].ToString();
+                                object pageNoObject = tempRows[0]["PageNo"];
+                                int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+
+ 
+
+                                // Check if mlValue is not empty and update ConfigData DataTable
+                                if (!string.IsNullOrEmpty(mlValue))
+                                {
+                                    foreach (DataRow configrow in ConfigData.Rows)
+                                    {
+                                        int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                        string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                        if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                        {
+                                            configrow["Value"] = mlValue;
+                                            configrow["Attribute"] = attribute;
+                                            configrow["PageNo"] = pageNo;
+                                            configrow["Confidence"] = confidence;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        foreach (KeyValuePair<string, string> kvp in comparisonColumns4)
+                        {
+                            string dataCol = kvp.Key;
+                            string lookupCol = kvp.Value;
+
+ 
+
+                            // Check if the configFieldName matches any key in comparison_columns
+                            if (configFieldName == lookupCol)
+                            {
+                                // Search for the matching value in MLData DataTable
+                                DataRow[] tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = '{lookupCol}'");
+
+ 
+
+                                // Handle special cases for lookupColumn
+                                if (tempRows.Length == 0)
+                                {
+                                    if (lookupCol == "Patient_City1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_City'");
+                                    }
+                                    else if (lookupCol == "Patient_State1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_State'");
+                                    }
+                                    else if (lookupCol == "Patient_Zip1")
+                                    {
+                                        tempRows = MLData.Select($"OrderId = {orderId} AND FieldMappingName = 'Patient_Zip'");
+                                    }
+                                }
+
+ 
+
+                                // If matching value found, update ConfigData DataTable
+                                if (tempRows.Length > 0)
+                                {
+                                    string mlValue = tempRows[0]["Value"].ToString();
+                                    string attribute = tempRows[0]["Attribute"].ToString();
+                                    object pageNoObject = tempRows[0]["PageNo"];
+                                    int pageNo = pageNoObject != DBNull.Value ? Convert.ToInt32(pageNoObject) : 0;
+                                    int confidence = Convert.ToInt32(tempRows[0]["Confidence"]);
+
+ 
+
+                                    if (!string.IsNullOrEmpty(mlValue))
+                                    {
+                                        foreach (DataRow configrow in ConfigData.Rows)
+                                        {
+                                            int ConfigOrderId = Convert.ToInt32(configrow["OrderId"]);
+                                            string fieldName = configrow["ConfigFieldName"].ToString();
+
+ 
+
+                                            if ((orderId == ConfigOrderId) && (fieldName == dataCol))
+                                            {
+                                                // Check if the corresponding cell in ConfigData DataTable is empty
+                                                if (string.IsNullOrEmpty(configrow["Value"].ToString()))
+                                                {
+                                                    configrow["Value"] = mlValue;
+                                                    configrow["Attribute"] = attribute;
+                                                    configrow["PageNo"] = pageNo;
+                                                    configrow["Confidence"] = confidence;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+ 
+
+                    }
+                }
+            }
+        }
+
+ 
+
+        //Generate XML from Merged DataTable
+        public static string GenerateXML(DataTable ConfigData)
+        {
+        string xmlData = "";
+        __PLogger.Log.Info("GenerateXml starts.");
+        try
+        {
+            //Convert output datatable to XML object
+            HeaderData objConfig = new HeaderData();
+            //objConfig.Header = new HeaderData();
+            objConfig.FieldList = MapHeaderData(ConfigData);
+            if (objConfig != null)
+            {
+                xmlData = ToXML(objConfig);
+                __PLogger.Log.Info("Xml has been created");
+                if (!string.IsNullOrWhiteSpace(xmlData))
+                {
+                    xmlData = xmlData.Replace("<?xml version=\"1.0\" encoding=\"utf-16\"?>\r\n", "");
+                    xmlData = xmlData.Replace("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n", "");
+                    __PLogger.Log.Info(xmlData);
+                }
+            }
+            else
+            {
+                __PLogger.Log.Info("No Data for XML convertion Process");
+            }
+        }
+        catch (Exception ex)
+        {
+            xmlData = "";
+            __PLogger.Log.Error("GenerateXml Exception occured.\n =>" + ex.Message);
+            __PLogger.Log.Error(ex.StackTrace);
+        }
+        __PLogger.Log.Info("GenerateXml ends.");
+        return xmlData;
+        }
+        public static List<Record> MapHeaderData(DataTable dtMap)
+        {
+            List<Record> objHdrLst = new List<Record>();
+            Record objHdr = new Record();
+            try
+            {
+                if (dtMap.Rows.Count > 0)
+                {
+                    objHdrLst = dtMap.AsEnumerable().Select(row => new Record
+                    {
+                        OrderId = row.Field<long>("OrderId"),
+                        Value = row.Field<string>("Value"),
+                        Attribute = row.Field<string>("Attribute"),
+                        PageNo = row.Field<int?>("PageNo").GetValueOrDefault(),
+                        FieldId = row.Field<int>("FieldId"),
+                        Confidence = row.Field<int>("Confidence"),
+                        FieldName = row.Field<string>("FieldName"),
+                    }).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                objHdrLst = new List<Record>();
+                __PLogger.Log.Error("MapHeaderSTPData Exception occured.\n =>" + ex.Message);
+                __PLogger.Log.Error(ex.StackTrace);
+            }
+            return objHdrLst;
+        }
+
